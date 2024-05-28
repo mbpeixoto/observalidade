@@ -1,0 +1,36 @@
+version: "3.7"
+
+services:
+  zipkin-collector:
+    image: openzipkin/zipkin-slim:latest
+    ports:
+      - "9411:9411"
+    networks:
+      - example
+
+  servicoa:
+    build:
+      context: ./servicoA
+      dockerfile: Dockerfile
+    command: ["/go/bin/main", "-zipkin", "http://zipkin-collector:9411/api/v2/spans"]
+    ports:
+      - "8080:8080"
+    networks:
+      - example
+    depends_on:
+      - zipkin-collector
+
+  servicob:
+    build:
+      context: ./servicoB
+      dockerfile: Dockerfile
+    command: ["/go/bin/main", "-zipkin", "http://zipkin-collector:9411/api/v2/spans"]
+    ports:
+      - "8081:8081"
+    networks:
+      - example
+    depends_on:
+      - zipkin-collector
+
+networks:
+  example:
