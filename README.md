@@ -14,23 +14,13 @@ Passos para Configuração
 
 `cd <NOME_DO_REPOSITORIO>`
 
-2. Estrutura do diretório:
-.
-├── docker-compose.yml
-├── servicoA
-│   ├── Dockerfile
-│   └── main.go
-└── servicoB
-    ├── Dockerfile
-    └── main.go
-
-3. Subir container Docker
+2. Subir container Docker
 `docker-compose up --build`
 
-4. Testar api do servicoA
+3. Testar api do servicoA
 Exemplo: `curl -X POST -d '{"cep":"01001000"}' http://localhost:8080/servicoA`
 
-5. Acompanhar os traces:
+4. Acompanhar os traces:
 
 Abra um navegador e acesse o Zipkin UI em http://localhost:9411. Você poderá visualizar os traces gerados pelas requisições feitas aos serviços.
  
