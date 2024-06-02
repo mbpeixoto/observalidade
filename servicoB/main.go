@@ -72,9 +72,10 @@ type ViaCep struct {
 }
 
 type TemperaturaResponse struct {
-	TemperaturaGraus     float64 `json:"Temp_C"`
-	TemperaturaFarenheit float64 `json:"Temp_F"`
-	TemperaturaKelvin    float64 `json:"Temp_K"`
+	City 			   string  `json:"city"`
+	TemperaturaGraus     float64 `json:"temp_C"`
+	TemperaturaFarenheit float64 `json:"temp_F"`
+	TemperaturaKelvin    float64 `json:"temp_K"`
 }
 
 type WeatherResponse struct {
@@ -131,6 +132,7 @@ func ServicoB(ctx context.Context, tr trace.Tracer, w http.ResponseWriter, r *ht
 	tempK := celsiusToKelvin(tempC)
 
 	var temperaturaResponse TemperaturaResponse
+	temperaturaResponse.City = location
 	temperaturaResponse.TemperaturaGraus = tempC
 	temperaturaResponse.TemperaturaFarenheit = tempF
 	temperaturaResponse.TemperaturaKelvin = tempK
