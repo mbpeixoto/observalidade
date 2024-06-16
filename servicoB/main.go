@@ -94,9 +94,14 @@ func ServicoB(ctx context.Context, tr trace.Tracer, w http.ResponseWriter, r *ht
 	cep := mux.Vars(r)["cep"]
 	span.SetAttributes(attribute.String("request.cep", cep))
 
+	if len(cep) != 8 {
+		http.Error(w, "invalid zipcode", http.StatusUnprocessableEntity)
+		return
+	}
+
 	req, err := http.NewRequest("GET", "http://viacep.com.br/ws/"+cep+"/json/", nil)
 	if err != nil {
-		http.Error(w, "invalid zipcode", http.StatusUnprocessableEntity)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -107,9 +112,15 @@ func ServicoB(ctx context.Context, tr trace.Tracer, w http.ResponseWriter, r *ht
 	childSpan.End()
 
 	if err != nil {
-		http.Error(w, "erro ao comunicar com viaCep", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "invalid zipcode", http.StatusUnprocessableEntity)
+		return
+	}
+
 	defer resp.Body.Close()
 
 	var viaCep ViaCep
@@ -153,7 +164,7 @@ func getWeather(apiKey string, location string) (float64, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("API request failed with status: %s", resp.Status)
+		return 0, fmt.Errorf("can not find zipcode")
 	}
 
 	var weatherResp WeatherResponse
