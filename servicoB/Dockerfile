@@ -1,9 +1,9 @@
-FROM golang:1.22.2 as build
+FROM golang:1.22 as builder
 WORKDIR /app
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o servicoB
+RUN GOOS=linux CGO_ENABLED=0 go build -ldflags="-w -s" -o service-b main.go
 
 FROM scratch
-WORKDIR /app
-COPY --from=build /app/servicoB .
-ENTRYPOINT [ "./servicoB" ]
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /app/service-b .
+CMD ["./service-b"]

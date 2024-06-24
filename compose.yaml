@@ -1,36 +1,60 @@
-version: "3.7"
-
+version: '3'
 services:
-  zipkin-collector:
-    image: openzipkin/zipkin-slim:latest
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    restart: always
+    ports:
+      - "16686:16686"
+      - "14268"
+      - "14250"
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    restart: always
     ports:
       - "9411:9411"
-    networks:
-      - example
 
-  servicoa:
-    build:
-      context: ./servicoA
-      dockerfile: Dockerfile
-    command: ["/go/bin/main", "-zipkin", "http://zipkin-collector:9411/api/v2/spans"]
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    restart: always
+    volumes:
+      - ./.docker/prometheus.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  collector:
+    image: otel/opentelemetry-collector:latest
+    restart: always
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./.docker/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "1888:1888"   # pprof extension
+      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - "8889:8889"   # Prometheus exporter metrics
+      - "13133:13133" # health_check extension
+      - "4317:4317"   # OTLP gRPC receiver
+      - "55679:55679" # zpages extension
+
+  service-a:
+    container_name: service-a
+    build: ./servicoA
     ports:
       - "8080:8080"
-    networks:
-      - example
     depends_on:
-      - zipkin-collector
+      - jaeger
+      - zipkin
+      - prometheus
+      - collector
 
-  servicob:
-    build:
-      context: ./servicoB
-      dockerfile: Dockerfile
-    command: ["/go/bin/main", "-zipkin", "http://zipkin-collector:9411/api/v2/spans"]
+  service-b:
+    container_name: service-b
+    build: ./servicoB
     ports:
       - "8081:8081"
-    networks:
-      - example
     depends_on:
-      - zipkin-collector
-
-networks:
-  example:
+      - jaeger
+      - zipkin
+      - prometheus
+      - collector

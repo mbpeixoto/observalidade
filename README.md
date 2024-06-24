@@ -18,7 +18,7 @@ Passos para Configuração
 `docker-compose up --build`
 
 3. Testar api do servicoA
-Exemplo: `curl -X POST -d '{"cep":"01001000"}' http://localhost:8080/servicoA`
+Exemplo: `curl -X POST -d '{"cep":"01001000"}' http://localhost:8080/`
 
 4. Acompanhar os traces:
 
