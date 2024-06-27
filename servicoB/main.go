@@ -136,8 +136,8 @@ func ServicoB(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(resp, &viaCep)
 	if err != nil {
 		log.Printf("Error parsing JSON response: %v", err)
-		w.WriteHeader(500)
-		w.Write([]byte("Error parsing zipcode data"))
+		w.WriteHeader(422)
+		w.Write([]byte("invalid zipcode"))
 		return
 	}
 
