@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 
+
 	"github.com/gorilla/mux"
 
 	"google.golang.org/grpc"
@@ -23,31 +24,30 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
-var tracer = otel.Tracer("challenge-weather-by-cep-otel")
+var tracer = otel.Tracer("observalidade-otel")
 
 func main() {
-    // Parse flags, if any
-   tp := initTracer()
+	tp := initTracer()
 	defer func() {
 		if err := tp.Shutdown(context.Background()); err != nil {
 			log.Printf("Error shutting down tracer provider: %v", err)
 		}
 	}()
-	fmt.Println("TracerProvider inicializado com sucesso")
 
-    r := mux.NewRouter()
-    r.HandleFunc("/",ServicoA).Methods("POST")
 
-    err := http.ListenAndServe(":8080", r)
+	r := mux.NewRouter()
+	r.HandleFunc("/", ServicoA).Methods("POST")
+
+	err := http.ListenAndServe(":8080", r)
 	if err != nil {
 		log.Println(err)
-	} else{
+	} else {
 		fmt.Println("ServicoA rodando na porta 8080")
 	}
 }
 
-func ServicoA( w http.ResponseWriter, r *http.Request) {
-	
+func ServicoA(w http.ResponseWriter, r *http.Request) {
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Erro ao ler o corpo da requisição", http.StatusBadRequest)
@@ -72,10 +72,12 @@ func ServicoA( w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 
-	resp, err:= fetchData(ctx, "http://service-b:8081/"+aux.Cep)
-
+	log.Println("Chamando servicoB")
+	url := "http://service-b:8081/"+aux.Cep
+	resp, err := fetchData(ctx, url)
 	if err != nil {
 		http.Error(w, "erro ao comunicar com servicoB", http.StatusInternalServerError)
+		log.Printf("Erro ao comunicar com serviço B: %v", err)
 		return
 	}
 
@@ -83,41 +85,37 @@ func ServicoA( w http.ResponseWriter, r *http.Request) {
 	w.Write(resp)
 }
 
-
 func initTracer() *sdktrace.TracerProvider {
 	ctx := context.Background()
-    conn, err := grpc.DialContext(ctx, "collector:4317",
-        grpc.WithTransportCredentials(insecure.NewCredentials()),
-        grpc.WithBlock(),
-    )
-    if err != nil {
-        log.Fatalf("failed to create gRPC connection to collector: %v", err)
-    }
-    defer conn.Close()
-
-    exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
-    if err != nil {
-        log.Fatalf("failed to create trace exporter: %v", err)
-    }
-
-    resource, _ := resource.Merge(
-        resource.Default(),
-        resource.NewWithAttributes(
-            semconv.SchemaURL,
-            semconv.ServiceNameKey.String("servicoA"),
-        ),
-    )
-
-    tp := sdktrace.NewTracerProvider(
-        sdktrace.WithSampler(sdktrace.AlwaysSample()),
-        sdktrace.WithBatcher(exporter),
-        sdktrace.WithResource(resource),
-    )
-
-    otel.SetTracerProvider(tp)
-    otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-
-    return tp
+	conn, err := grpc.DialContext(ctx, "collector:4317",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		log.Fatal("failed to create gRPC connection to collector: %w", err)
+	}
+	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
+	if err != nil {
+		log.Fatal("failed to create trace exporter: %w", err)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	resource, _ := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("service-a"),
+		),
+	)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	return tp
 }
 
 type BodyA struct {
@@ -126,16 +124,15 @@ type BodyA struct {
 
 func fetchData(c context.Context, url string) (response []byte, err error) {
 	res, err := otelhttp.Get(c, url)
-    if err != nil {
-        return nil, err
-    }
-    defer res.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
 
-    body, err := io.ReadAll(res.Body)
-    if err != nil {
-        return nil, err
-    }
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
 
-    return body, nil
+	return body, nil
 }
-

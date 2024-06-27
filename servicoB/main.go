@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
-	"io"
 
 	"github.com/gorilla/mux"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -23,7 +23,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
-var tracer = otel.Tracer("challenge-weather-by-cep-otel")
+var tracer = otel.Tracer("observalidade-otel")
 
 func initTracer() *sdktrace.TracerProvider {
 	ctx := context.Background()
@@ -41,11 +41,12 @@ func initTracer() *sdktrace.TracerProvider {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	resource, _ := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("servicoB"),
+			semconv.ServiceNameKey.String("service-b"),
 		),
 	)
 	tp := sdktrace.NewTracerProvider(
@@ -72,15 +73,15 @@ func main() {
 
 	if err != nil {
 		log.Println(err)
-	} else{
-		fmt.Println("ServicoA rodando na porta 8080")
+	} else {
+		fmt.Println("ServicoB rodando na porta 8081")
 	}
 }
-
 
 const apiKey = "4a3689591e7746a38fc120653242305"
 
 type ViaCep struct {
+	Erro        string `json:"erro"`
 	Cep         string `json:"cep"`
 	Logradouro  string `json:"logradouro"`
 	Complemento string `json:"complemento"`
@@ -94,10 +95,10 @@ type ViaCep struct {
 }
 
 type TemperaturaResponse struct {
-	City                string  `json:"city"`
-	TemperaturaGraus    float64 `json:"temp_C"`
+	City                 string  `json:"city"`
+	TemperaturaGraus     float64 `json:"temp_C"`
 	TemperaturaFarenheit float64 `json:"temp_F"`
-	TemperaturaKelvin   float64 `json:"temp_K"`
+	TemperaturaKelvin    float64 `json:"temp_K"`
 }
 
 type WeatherResponse struct {
@@ -106,7 +107,7 @@ type WeatherResponse struct {
 	} `json:"current"`
 }
 
-func ServicoB( w http.ResponseWriter, r *http.Request) {
+func ServicoB(w http.ResponseWriter, r *http.Request) {
 	cep := mux.Vars(r)["cep"]
 
 	if len(cep) != 8 {
@@ -120,32 +121,38 @@ func ServicoB( w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracer.Start(ctx, "request-service-b")
 	defer span.End()
 
+
 	url := "http://viacep.com.br/" + "ws/" + cep + "/json"
 	resp, err := fetchData(ctx, url)
 	if err != nil {
-		fmt.Printf("ERROR: %s\n", err.Error())
+		log.Printf("Error fetching data from external API: %v", err)
 		w.WriteHeader(500)
 		w.Write([]byte("Error fetching zipcode data"))
 		return
 	}
-
+	
 	var viaCep ViaCep
 
 	err = json.Unmarshal(resp, &viaCep)
 	if err != nil {
-		fmt.Printf("ERROR: %s\n", err.Error())
+		log.Printf("Error parsing JSON response: %v", err)
 		w.WriteHeader(500)
 		w.Write([]byte("Error parsing zipcode data"))
 		return
 	}
 
+	if viaCep.Erro == "true" {
+		w.WriteHeader(404)
+		w.Write([]byte("can not find zipcode"))
+		return
+	}
+
 	location := viaCep.Localidade
 
-	log.Printf("Location: %s\n", location)
-
-	tempC, err := getWeather(apiKey, location)
+	tempC, err := getWeather(ctx, apiKey, location)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error fetching weather data: %v", err)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -164,35 +171,33 @@ func ServicoB( w http.ResponseWriter, r *http.Request) {
 
 func fetchData(c context.Context, url string) (response []byte, err error) {
 	res, err := otelhttp.Get(c, url)
-    if err != nil {
-        return nil, err
-    }
-    defer res.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
 
-    body, err := io.ReadAll(res.Body)
-    if err != nil {
-        return nil, err
-    }
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
 
-    return body, nil
+	return body, nil
 }
 
-func getWeather(apiKey string, location string) (float64, error) {
+func getWeather(ctx context.Context, apiKey string, location string) (float64, error) {
 	formattedLocation := url.QueryEscape(location)
 	urlWeather := fmt.Sprintf("http://api.weatherapi.com/v1/current.json?key=%s&q=%s", apiKey, formattedLocation)
 
-	resp, err := http.Get(urlWeather)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
+	resp, err := fetchData(ctx, urlWeather)
 
-	if resp.StatusCode != http.StatusOK {
+	if err != nil {
 		return 0, fmt.Errorf("can not find zipcode")
 	}
 
 	var weatherResp WeatherResponse
-	if err := json.NewDecoder(resp.Body).Decode(&weatherResp); err != nil {
+
+	err = json.Unmarshal(resp, &weatherResp)
+	if err != nil {
 		return 0, err
 	}
 
